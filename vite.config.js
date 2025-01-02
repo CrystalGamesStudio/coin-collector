@@ -1,9 +1,11 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-    base: './',
-    server: {
-        host: true,
-        open: true
-    }
+    build: {
+        outDir: 'dist',
+        assetsDir: 'assets',
+        sourcemap: true,
+        publicDir: 'public'
+      },
+    base: '/coin-collector',
 }); 
