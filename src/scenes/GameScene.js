@@ -1,385 +1,346 @@
+import { translations, getCurrentLanguage } from '../translations';
+
 export default class GameScene extends Phaser.Scene {
     constructor() {
-        super({ key: 'GameScene' });
+        super('GameScene');
         this.score = 0;
+        this.coins = 0;
         this.level = 1;
-        this.gameTime = 0;
-        this.isGameOver = false;
-        this.playerSpeed = 400; // Prędkość poruszania się gracza
-        
-        // Definiujemy progi punktowe dla kolejnych poziomów
-        this.levelThresholds = [
-            0, 50, 100, 200, 350, 550, 800, 1000
-        ];
+        this.playerPosition = 1; // 0-lewa, 1-środek, 2-prawa
+        this.isGameOver = false; // Dodajemy flagę game over
+        this.isMoving = false; // Flaga do kontroli ruchu
     }
 
     create() {
-        // Resetujemy stan gry
-        this.isGameOver = false;
-        this.score = 0;
-        this.level = 1;
-        this.gameTime = 0;
+        this.isGameOver = false; // Resetujemy flagę przy starcie gry
+        this.currentLang = getCurrentLanguage();
         
-        const width = this.scale.width;
-        const height = this.scale.height;
-
-        // Ustawiamy granice świata gry
-        this.physics.world.setBounds(0, 0, width, height);
-
-        // Tło
-        this.add.rectangle(width/2, height/2, width, height, 0x000000);
-
-        // Gracz
-        this.player = this.add.sprite(width/2, height * 0.8, 'player');
-        this.player.setScale(Math.min(width/800, height/600) * 0.6);
-        this.physics.add.existing(this.player, false);
+        // Definiujemy pozycje torów
+        this.lanes = [200, 400, 600];
         
-        // Ustawiamy granice dla gracza
-        this.player.body.setCollideWorldBounds(true);
-
-        // Grupa dla przeszkód
-        this.obstacles = this.physics.add.group();
-
-        // Tekst wyników
-        this.scoreText = this.add.text(width * 0.05, height * 0.05, 'Wynik: 0', { 
-            fontSize: Math.min(width/20, 32) + 'px',
-            fill: '#fff' 
-        });
+        // Tworzymy gracza
+        this.player = this.add.sprite(this.lanes[1], 500, 'player0');
+        this.player.setScale(0.8);
         
-        this.levelText = this.add.text(width * 0.05, height * 0.1, 'Poziom: 1', { 
-            fontSize: Math.min(width/20, 32) + 'px',
-            fill: '#fff' 
+        // Dodajemy fizykę do gracza
+        this.physics.add.existing(this.player);
+        
+        // Tworzymy animację postaci
+        this.anims.create({
+            key: 'run',
+            frames: [
+                { key: 'player0' },
+                { key: 'player1' },
+                { key: 'player2' },
+                { key: 'player1' }
+            ],
+            frameRate: 8,
+            repeat: -1
         });
 
-        // Obsługa klawiszy
+        // Uruchamiamy animację biegu
+        this.player.play('run');
+        
+        // Dodajemy teksty
+        this.scoreText = this.add.text(16, 16, `${translations[this.currentLang].score}: ${this.score}`, {
+            fontSize: '32px',
+            fill: '#fff',
+            fontFamily: 'Arial'
+        });
+
+        this.coinsText = this.add.text(16, 56, `${translations[this.currentLang].coins}: ${this.coins}`, {
+            fontSize: '32px',
+            fill: '#fff',
+            fontFamily: 'Arial'
+        });
+
+        this.levelText = this.add.text(16, 96, `${translations[this.currentLang].level}: ${this.level}`, {
+            fontSize: '32px',
+            fill: '#fff',
+            fontFamily: 'Arial'
+        });
+
+        // Dodajemy obsługę klawiatury
         this.cursors = this.input.keyboard.createCursorKeys();
-
+        
+        // Tworzymy grupę dla przeszkód
+        this.obstacles = this.physics.add.group();
+        
+        // Tworzymy grupę dla monet
+        this.coinGroup = this.physics.add.group();
+        
+        // Dodajemy kolizje
+        this.physics.add.overlap(this.player, this.obstacles, this.gameOver, null, this);
+        this.physics.add.overlap(this.player, this.coinGroup, this.collectCoin, null, this);
+        
         // Timer do generowania przeszkód
-        this.obstacleTimer = this.time.addEvent({
+        this.time.addEvent({
             delay: 2000,
             callback: this.spawnObstacle,
             callbackScope: this,
             loop: true
         });
-
-        // Timer do aktualizacji poziomu
-        this.levelTimer = this.time.addEvent({
-            delay: 1000,
-            callback: this.updateGameTime,
+        
+        // Timer do generowania monet
+        this.time.addEvent({
+            delay: 3000,
+            callback: this.spawnCoin,
             callbackScope: this,
             loop: true
         });
-
-        // Dodajemy kolizję między graczem a przeszkodami
-        this.physics.add.overlap(
-            this.player,
-            this.obstacles,
-            this.handleCollision,
-            null,
-            this
-        );
-
-        // Tekst Game Over (początkowo niewidoczny)
-        this.gameOverText = this.add.text(400, 200, 'GAME OVER', {
-            fontSize: '64px',
-            fill: '#ff0000',
-            align: 'center'
-        });
-        this.gameOverText.setOrigin(0.5);
-        this.gameOverText.setAlpha(0);
-        this.gameOverText.setVisible(false);
-        this.gameOverText.setDepth(2);
-
-        // Wynik końcowy
-        this.finalScoreText = this.add.text(400, 280, '', {
-            fontSize: '32px',
-            fill: '#fff',
-            align: 'center'
-        });
-        this.finalScoreText.setOrigin(0.5);
-        this.finalScoreText.setAlpha(0);
-        this.finalScoreText.setVisible(false);
-        this.finalScoreText.setDepth(2);
-
-        // Przyciski menu
-        this.restartButton = this.add.rectangle(400, 360, 200, 50, 0x00ff00);
-        this.restartButton.setInteractive();
-        this.restartButton.setAlpha(0);
-        this.restartButton.setVisible(false);
-        this.restartButton.setDepth(2);
-
-        this.restartText = this.add.text(400, 360, 'Zacznij od nowa', {
-            fontSize: '24px',
-            fill: '#000'
-        });
-        this.restartText.setOrigin(0.5);
-        this.restartText.setAlpha(0);
-        this.restartText.setVisible(false);
-        this.restartText.setDepth(2);
         
-        this.menuButton = this.add.rectangle(400, 430, 200, 50, 0x0000ff);
-        this.menuButton.setInteractive();
-        this.menuButton.setAlpha(0);
-        this.menuButton.setVisible(false);
-        this.menuButton.setDepth(2);
-
-        this.menuText = this.add.text(400, 430, 'Ekran główny', {
-            fontSize: '24px',
-            fill: '#fff'
+        // Timer do aktualizacji wyniku
+        this.time.addEvent({
+            delay: 1000,
+            callback: this.updateScore,
+            callbackScope: this,
+            loop: true
         });
-        this.menuText.setOrigin(0.5);
-        this.menuText.setAlpha(0);
-        this.menuText.setVisible(false);
-        this.menuText.setDepth(2);
-
-        // Dodajemy efekty hover dla przycisków
-        this.restartButton.on('pointerover', () => {
-            this.restartButton.setFillStyle(0x00dd00);
-        });
-        this.restartButton.on('pointerout', () => {
-            this.restartButton.setFillStyle(0x00ff00);
-        });
-
-        this.menuButton.on('pointerover', () => {
-            this.menuButton.setFillStyle(0x0000dd);
-        });
-        this.menuButton.on('pointerout', () => {
-            this.menuButton.setFillStyle(0x0000ff);
-        });
-
-        // Dodajemy obsługę kliknięć
-        this.restartButton.on('pointerdown', () => {
-            this.scene.restart();
-        });
-
-        this.menuButton.on('pointerdown', () => {
-            this.scene.start('MenuScene');
-        });
-    }
-
-    handleCollision(player, obstacle) {
-        if (!this.isGameOver) {
-            this.isGameOver = true;
-            
-            const width = this.scale.width;
-            const height = this.scale.height;
-
-            // Zatrzymujemy timery
-            this.obstacleTimer.remove();
-            this.levelTimer.remove();
-
-            // Zatrzymujemy wszystkie przeszkody
-            this.obstacles.children.each(function(obstacle) {
-                obstacle.body.setVelocity(0);
-            });
-
-            // Efekt eksplozji
-            const explosion = this.add.sprite(player.x, player.y, 'explosion');
-            explosion.play('explode');
-            
-            // Ukrywamy gracza
-            player.setVisible(false);
-
-            // Dodajemy efekt przyciemnienia tła
-            const overlay = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.7);
-            overlay.setDepth(1);
-
-            // Aktualizujemy pozycje i rozmiary elementów game over
-            this.gameOverText.setPosition(width/2, height * 0.3);
-            this.gameOverText.setFontSize(Math.min(width/12, 64) + 'px');
-            this.gameOverText.setDepth(2);
-            this.gameOverText.setVisible(true);
-
-            this.finalScoreText.setPosition(width/2, height * 0.4);
-            this.finalScoreText.setFontSize(Math.min(width/20, 32) + 'px');
-            this.finalScoreText.setText(`Wynik końcowy: ${this.score}`);
-            this.finalScoreText.setDepth(2);
-            this.finalScoreText.setVisible(true);
-
-            // Przyciski
-            const buttonWidth = width * 0.25;
-            const buttonHeight = height * 0.08;
-
-            // Przycisk restartu
-            this.restartButton.setPosition(width/2, height * 0.55);
-            this.restartButton.setSize(buttonWidth, buttonHeight);
-            this.restartButton.setDepth(2);
-            this.restartButton.setVisible(true);
-
-            this.restartText.setPosition(width/2, height * 0.55);
-            this.restartText.setFontSize(Math.min(width/24, 32) + 'px');
-            this.restartText.setDepth(2);
-            this.restartText.setVisible(true);
-
-            // Przycisk menu
-            this.menuButton.setPosition(width/2, height * 0.7);
-            this.menuButton.setSize(buttonWidth, buttonHeight);
-            this.menuButton.setDepth(2);
-            this.menuButton.setVisible(true);
-
-            this.menuText.setPosition(width/2, height * 0.7);
-            this.menuText.setFontSize(Math.min(width/24, 32) + 'px');
-            this.menuText.setDepth(2);
-            this.menuText.setVisible(true);
-
-            // Animacje wejścia
-            this.tweens.add({
-                targets: [this.gameOverText, this.finalScoreText],
-                y: '-=50',
-                alpha: { from: 0, to: 1 },
-                duration: 1000,
-                ease: 'Power2'
-            });
-
-            this.tweens.add({
-                targets: [this.restartButton, this.restartText, this.menuButton, this.menuText],
-                y: '-=50',
-                alpha: { from: 0, to: 1 },
-                duration: 1000,
-                delay: 500,
-                ease: 'Power2'
-            });
-        }
     }
 
     update() {
-        if (this.isGameOver) return;
-
-        // Obsługa ruchu gracza
-        const speed = this.playerSpeed + (this.level * 50); // Zwiększamy prędkość z poziomem
-
-        if (this.cursors.left.isDown) {
-            this.player.body.setVelocityX(-speed);
-            this.player.setFlipX(true);
-            if (!this.player.anims.isPlaying) this.player.play('move');
+        if (!this.isMoving) {
+            // Obsługa ruchu gracza
+            if (Phaser.Input.Keyboard.JustDown(this.cursors.left) && this.playerPosition > 0) {
+                this.movePlayer('left');
+            }
+            else if (Phaser.Input.Keyboard.JustDown(this.cursors.right) && this.playerPosition < 2) {
+                this.movePlayer('right');
+            }
         }
-        else if (this.cursors.right.isDown) {
-            this.player.body.setVelocityX(speed);
-            this.player.setFlipX(false);
-            if (!this.player.anims.isPlaying) this.player.play('move');
-        }
-        else {
-            this.player.body.setVelocityX(0);
-            if (this.player.anims.getName() !== 'idle') this.player.play('idle');
-        }
-
-        if (this.cursors.up.isDown) {
-            this.player.body.setVelocityY(-speed);
-            if (!this.player.anims.isPlaying) this.player.play('move');
-        }
-        else if (this.cursors.down.isDown) {
-            this.player.body.setVelocityY(speed);
-            if (!this.player.anims.isPlaying) this.player.play('move');
-        }
-        else {
-            this.player.body.setVelocityY(0);
-        }
-
-        // Normalizacja prędkości przy ruchu po przekątnej
-        this.player.body.velocity.normalize().scale(speed);
-    }
-
-    spawnObstacle() {
-        const width = this.scale.width;
-        const height = this.scale.height;
         
-        // Losowa pozycja startowa na górze ekranu
-        const randomX = Phaser.Math.Between(width * 0.1, width * 0.9);
-        const obstacle = this.add.sprite(randomX, -height * 0.05, 'obstacle');
-        
-        // Skalowanie przeszkody
-        const scale = Math.min(width/800, height/600) * (0.5 + (this.level * 0.05));
-        obstacle.setScale(Math.min(scale, 0.9));
-        
-        this.physics.add.existing(obstacle);
-        this.obstacles.add(obstacle);
-
-        // Animacja przeszkody
-        obstacle.play('obstacle-anim');
-
-        // Prędkość zależna od poziomu - tylko w dół
-        const speed = height * 0.3 + (this.level * height * 0.05);
-        obstacle.body.setVelocityY(speed);
-
-        // Efekt wejścia
-        obstacle.setAlpha(0);
-        this.tweens.add({
-            targets: obstacle,
-            alpha: 1,
-            duration: 200
-        });
-
-        // Automatyczne zniszczenie po wyjściu poza ekran
-        this.time.delayedCall(10000, () => {
-            if (obstacle && !obstacle.destroyed) {
+        // Usuwanie obiektów poza ekranem
+        this.obstacles.getChildren().forEach(obstacle => {
+            if (obstacle.y > 600) {
                 obstacle.destroy();
             }
         });
+        
+        this.coinGroup.getChildren().forEach(coin => {
+            if (coin.y > 600) {
+                coin.destroy();
+            }
+        });
     }
 
-    updateGameTime() {
-        if (this.isGameOver) return;
+    spawnObstacle() {
+        const lane = Phaser.Math.Between(0, 2);
+        const obstacle = this.obstacles.create(this.lanes[lane], -50, 'obstacle');
+        obstacle.setVelocityY(200 + (this.level * 20));
+    }
+
+    spawnCoin() {
+        const lane = Phaser.Math.Between(0, 2);
+        const coin = this.coinGroup.create(this.lanes[lane], -50, 'coin');
+        coin.setVelocityY(150 + (this.level * 10));
+    }
+
+    collectCoin(player, coin) {
+        coin.destroy();
+        this.coins++;
+        this.coinsText.setText(`${translations[this.currentLang].coins}: ${this.coins}`);
+    }
+
+    updateScore() {
+        if (this.isGameOver) return; // Przerywamy aktualizację jeśli gra skończona
         
-        this.gameTime++;
         this.score += 10;
+        this.scoreText.setText(`${translations[this.currentLang].score}: ${this.score}`);
         
-        // Sprawdzamy czy należy zwiększyć poziom
-        const newLevel = this.calculateLevel(this.score);
-        
+        // Aktualizacja poziomu
+        const newLevel = Math.floor(this.score / 100) + 1;
         if (newLevel !== this.level) {
             this.level = newLevel;
-            this.handleLevelUp();
+            this.levelText.setText(`${translations[this.currentLang].level}: ${this.level}`);
         }
+    }
+
+    gameOver() {
+        if (this.isGameOver) return;
         
-        this.levelText.setText('Poziom: ' + this.level);
-        this.scoreText.setText('Wynik: ' + this.score);
-    }
+        this.isGameOver = true;
+        this.physics.pause();
+        this.time.removeAllEvents();
 
-    calculateLevel(score) {
-        for (let i = this.levelThresholds.length - 1; i >= 0; i--) {
-            if (score >= this.levelThresholds[i]) {
-                return i + 1;
-            }
+        const width = this.cameras.main.width;
+        const height = this.cameras.main.height;
+
+        // Przyciemnienie tła
+        const overlay = this.add.rectangle(0, 0, width, height, 0x000000, 0.7).setOrigin(0);
+
+        // Kontener dla menu game over
+        const menuContainer = this.add.container(width / 2, height / 2 - 50);
+        
+        // Tło menu (zaokrąglony prostokąt)
+        const menuBg = this.add.graphics();
+        const menuWidth = 400;
+        const menuHeight = 400;
+        const cornerRadius = 20;
+        
+        // Efekt świecenia dla tła
+        for (let i = 0; i < 3; i++) {
+            menuBg.lineStyle(2, 0xff0000, 0.3 - (i * 0.1));
+            menuBg.fillStyle(0x000066, 0.7 - (i * 0.1));
+            menuBg.fillRoundedRect(
+                -menuWidth/2 - (i * 2), 
+                -menuHeight/2 - (i * 2), 
+                menuWidth + (i * 4), 
+                menuHeight + (i * 4), 
+                cornerRadius + (i * 2)
+            );
+            menuBg.strokeRoundedRect(
+                -menuWidth/2 - (i * 2), 
+                -menuHeight/2 - (i * 2), 
+                menuWidth + (i * 4), 
+                menuHeight + (i * 4), 
+                cornerRadius + (i * 2)
+            );
         }
-        return 1;
+
+        menuContainer.add(menuBg);
+
+        // Tekst GAME OVER z efektem
+        const gameOverText = this.add.text(0, -120, translations[this.currentLang].gameOver, {
+            fontSize: '64px',
+            fill: '#ff0000',
+            fontFamily: 'Arial Black'
+        }).setOrigin(0.5);
+        
+        // Dodajmy też animację pulsowania dla tekstu GAME OVER
+        this.tweens.add({
+            targets: gameOverText,
+            y: gameOverText.y + 10,
+            duration: 1500,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.InOut'
+        });
+        
+        // Wynik końcowy
+        const finalScoreText = this.add.text(0, -20, `${translations[this.currentLang].score}: ${this.score}`, {
+            fontSize: '32px',
+            fill: '#ffffff',
+            fontFamily: 'Righteous'
+        }).setOrigin(0.5);
+
+        // Zebrane monety
+        const finalCoinsText = this.add.text(0, 30, `${translations[this.currentLang].coins}: ${this.coins}`, {
+            fontSize: '32px',
+            fill: '#FFD700',
+            fontFamily: 'Righteous'
+        }).setOrigin(0.5);
+
+        menuContainer.add([gameOverText, finalScoreText, finalCoinsText]);
+
+        // Przyciski
+        const buttonConfigs = [
+            { text: translations[this.currentLang].restart, y: 100, action: () => this.scene.restart() },
+            { text: translations[this.currentLang].menu, y: 170, action: () => this.scene.start('MenuScene') }
+        ];
+
+        buttonConfigs.forEach(config => {
+            const button = this.createGameOverButton(0, config.y, config.text, config.action);
+            menuContainer.add(button);
+        });
+
+        // Animacja wejścia menu
+        menuContainer.setScale(0.8);
+        menuContainer.alpha = 0;
+        this.tweens.add({
+            targets: menuContainer,
+            scale: 1,
+            alpha: 1,
+            duration: 500,
+            ease: 'Back.out'
+        });
     }
 
-    handleLevelUp() {
-        // Efekt wizualny przy wbiciu nowego poziomu
-        const levelUpText = this.add.text(400, 300, 'Poziom ' + this.level + '!', {
-            fontSize: '64px',
-            fill: '#ffff00',
-            align: 'center'
-        });
-        levelUpText.setOrigin(0.5);
+    createGameOverButton(x, y, text, callback) {
+        const buttonWidth = 240;
+        const buttonHeight = 50;
+        const button = this.add.container(x, y);
 
-        // Animacja tekstu
+        // Tło przycisku
+        const buttonBg = this.add.graphics();
+        const buttonColor = 0x3498db;
+        const fillColor = 0x000099;
+
+        // Efekt świecenia
+        for (let i = 0; i < 3; i++) {
+            buttonBg.lineStyle(2, buttonColor, 0.3 - (i * 0.1));
+            buttonBg.fillStyle(fillColor, 0.7 - (i * 0.1));
+            buttonBg.fillRoundedRect(
+                -buttonWidth/2 - (i * 2),
+                -buttonHeight/2 - (i * 2),
+                buttonWidth + (i * 4),
+                buttonHeight + (i * 4),
+                10 + (i * 2)
+            );
+        }
+
+        // Główne tło przycisku
+        buttonBg.lineStyle(2, buttonColor);
+        buttonBg.fillStyle(fillColor, 0.8);
+        buttonBg.fillRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 10);
+        buttonBg.strokeRoundedRect(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight, 10);
+
+        // Tekst przycisku
+        const buttonText = this.add.text(0, 0, text, {
+            fontSize: '24px',
+            fill: '#ffffff',
+            fontFamily: 'Righteous'
+        }).setOrigin(0.5);
+
+        button.add([buttonBg, buttonText]);
+        button.setInteractive(new Phaser.Geom.Rectangle(-buttonWidth/2, -buttonHeight/2, buttonWidth, buttonHeight), Phaser.Geom.Rectangle.Contains);
+
+        // Efekty hover
+        button.on('pointerover', () => {
+            this.tweens.add({
+                targets: button,
+                scaleX: 1.05,
+                scaleY: 1.05,
+                duration: 100
+            });
+            buttonText.setStyle({ fill: '#FFD700' });
+        });
+
+        button.on('pointerout', () => {
+            this.tweens.add({
+                targets: button,
+                scaleX: 1,
+                scaleY: 1,
+                duration: 100
+            });
+            buttonText.setStyle({ fill: '#ffffff' });
+        });
+
+        button.on('pointerdown', callback);
+
+        return button;
+    }
+
+    movePlayer(direction) {
+        if (this.isMoving || this.isGameOver) return;
+
+        this.isMoving = true;
+        const newPosition = direction === 'left' ? this.playerPosition - 1 : this.playerPosition + 1;
+        const targetX = this.lanes[newPosition];
+
+        // Obracamy postać w kierunku ruchu
+        this.player.scaleX = direction === 'left' ? -0.8 : 0.8;
+
+        // Animacja przejścia
         this.tweens.add({
-            targets: levelUpText,
-            y: 200,
-            alpha: 0,
-            duration: 1500,
+            targets: this.player,
+            x: targetX,
+            duration: 300,
             ease: 'Power2',
             onComplete: () => {
-                levelUpText.destroy();
+                this.isMoving = false;
+                this.player.scaleX = 0.8; // Przywracamy normalną orientację
+                this.playerPosition = newPosition;
             }
-        });
-
-        // Dostosowujemy parametry gry dla nowego poziomu
-        this.adjustGameDifficulty();
-    }
-
-    adjustGameDifficulty() {
-        // Dostosowujemy częstotliwość pojawiania się przeszkód
-        this.obstacleTimer.remove();
-        
-        const newDelay = Math.max(2000 - (this.level * 200), 500); // Min 500ms
-        
-        this.obstacleTimer = this.time.addEvent({
-            delay: newDelay,
-            callback: this.spawnObstacle,
-            callbackScope: this,
-            loop: true
         });
     }
 } 

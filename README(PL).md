@@ -49,7 +49,16 @@ npm run build
 - **Postać gracza**: Animowana postać z możliwością poruszania się między torami
 - **Przeszkody**: Dynamicznie pojawiające się obiekty o różnych rozmiarach
 - **Interfejs**: Licznik punktów i wskaźnik poziomu
-- **Menu**: Ekran startowy i ekran końca gry z możliwością restartu
+- **Menu**: Zawierające:
+    - Ekran startowy
+    - Sklep
+    - Ustawienia
+  **Ekran końca gry**: Zawierające:
+    - Wynik
+    - Monety
+    - Poziom
+    - Przycisk restartu
+    - Przycisk powrotu do menu
 
 ## 🛠️ Szczegóły techniczne
 

@@ -3,36 +3,29 @@ import PreloadScene from './scenes/PreloadScene';
 import MenuScene from './scenes/MenuScene';
 import GameScene from './scenes/GameScene';
 import HowToPlayScene from './scenes/HowToPlayScene';
+import SettingsScene from './scenes/SettingsScene';
 
-const config = {
-    type: Phaser.AUTO,
-    scale: {
-        mode: Phaser.Scale.RESIZE,
+window.addEventListener('load', () => {
+    const config = {
+        type: Phaser.AUTO,
+        width: 800,
+        height: 600,
         parent: 'game',
-        width: '100%',
-        height: '100%',
-        min: {
-            width: 480,
-            height: 320
+        backgroundColor: '#000033',
+        physics: {
+            default: 'arcade',
+            arcade: {
+                gravity: { y: 0 },
+                debug: false
+            }
         },
-        max: {
-            width: 1920,
-            height: 1080
-        }
-    },
-    physics: {
-        default: 'arcade',
-        arcade: {
-            gravity: { y: 0 },
-            debug: false
-        }
-    },
-    scene: [PreloadScene, MenuScene, GameScene, HowToPlayScene]
-};
+        scene: [PreloadScene, MenuScene, GameScene, HowToPlayScene, SettingsScene]
+    };
 
-// Nasłuchiwanie zmiany rozmiaru okna
-window.addEventListener('resize', () => {
-    game.scale.refresh();
-});
-
-const game = new Phaser.Game(config); 
+    try {
+        const game = new Phaser.Game(config);
+        console.log('Gra została zainicjalizowana');
+    } catch (error) {
+        console.error('Błąd podczas inicjalizacji gry:', error);
+    }
+}); 
